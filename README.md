@@ -2,6 +2,7 @@
 
 # 🛡️ Image Privacy Toolkit
 
+
 ### Tu cara no es un dataset.
 
 Kit de **tres herramientas gratuitas y de código abierto** para reducir el uso no consentido de tus fotos.
