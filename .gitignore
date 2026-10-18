@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+services/engine/reports/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Entorno y secretos (nunca subir claves)
+.env
+.env.*
+!.env.example
+
+# Sistema y temporales
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*~
+*.swp

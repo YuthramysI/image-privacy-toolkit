@@ -1,0 +1,26 @@
+services:
+  engine:
+    build: ./services/engine
+    ports:
+      - "8000:8000"
+    environment:
+      ENGINE_CORS: http://localhost:3000
+      # Con GPU NVIDIA añade "maxima" y descomenta el bloque deploy.
+      ENGINE_PRESETS: suave,media,fuerte
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_ENGINE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - engine
