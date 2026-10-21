@@ -235,3 +235,61 @@ Se detuvo tras múltiples reinicios del entorno que impidieron completar 3 fotos
 **Hipótesis siguiente (no ejecutada, para retomar con entorno estable o GPU):** la cobertura a arquitecturas no vistas (p. ej. FaceNet) NO se gana con más modelos ArcFace; requiere atacar un reconocedor de ARQUITECTURA distinta, o atacar directamente las features del generador de face-swap. Script guardado: `engine/research/faceswap_ensemble.py`.
 
 NO se justifica cambiar el método actual por el ensemble con la evidencia disponible.
+
+---
+
+## C3 — Robust unlearnable vs adversarial training (2026-10-20)
+
+Pregunta (B/C de [PREGUNTAS_ABIERTAS.md](PREGUNTAS_ABIERTAS.md)): ¿la protección anti-entrenamiento SOBREVIVE a su defensa conocida, el *adversarial training*? C1 (error-minimizing) funciona pero la literatura dice que el adversarial training lo limpia; existe la variante "robust unlearnable" (Fu et al., ICLR 2022). Montaje: CIFAR, 5 clases, 2500 train / 1500 test, SmallCNN, ε=ε_adv=8/255, adv-steps=4, **2 semillas (0 y 1)**, CPU. Script: `engine/research/unlearnable_robust.py`. Métrica: *efecto neto* = acc(aleatorio) − acc(protegido) en test LIMPIO.
+
+Accuracies (semilla 0, representativa):
+
+| Datos | Acc (entrenador ESTÁNDAR) | Acc (entrenador ADVERSARIAL) |
+|---|---|---|
+| LIMPIO | 75.8% | 62.0% |
+| C1 (error-min) | 34.9% | 63.5% |
+| C3 (robust) | 50.9% | 62.1% |
+| ALEATORIO (control) | 74.2% | 61.2% |
+
+Efecto neto, ambas semillas (s0 / s1):
+
+| | Efecto neto ESTÁNDAR | Efecto neto ADVERSARIAL |
+|---|---|---|
+| C1 | **+39.3 / +39.3 pts** | −2.3 / −1.1 pts |
+| C3 | **+23.3 / +34.9 pts** | −0.9 / −2.5 pts |
+
+**Veredicto: NEGATIVO honesto (confirmado en 2 semillas).** Con el entrenador estándar ambos protegen (sanity OK: C1 +39, C3 +23–35; el aleatorio no afecta). Con **adversarial training el efecto de ambos colapsa a ~0** (C1 −1 a −2, C3 −1 a −2.5): el modelo defendido llega al mismo ~61-62% con datos limpios, C1, C3 o aleatorios. La implementación simplificada de robust unlearnable **NO sobrevivió** al adversarial training donde se esperaba que sí.
+
+**Matiz importante (no es gratis para el atacante):** el adversarial training **cuesta** ~14 puntos de accuracy limpia (76% → 62%). "Romper" la protección exige entrenar adversarialmente (más cómputo) y aceptar un modelo peor. No recupera la utilidad plena de los datos.
+
+### Actualización — C3 "fiel" con surrogate bien entrenado (2026-10-20)
+
+Se probó la hipótesis de que el negativo se debía a un surrogate poco entrenado (la versión simplificada lo entrenaba solo 4 épocas). Se reentrenó el surrogate **4× más** (16 épocas de adversarial training: `--c3-rounds 4 --c3-epochs-per-round 4 --c3-inner 10`), misma configuración.
+
+| Efecto neto | ESTÁNDAR | ADVERSARIAL |
+|---|---|---|
+| C1 | +44.9 pts | −1.5 pts |
+| C3 (fiel) | +28.6 pts | **−1.6 pts** |
+
+**Resultado: idéntico negativo.** Entrenar el surrogate a fondo **no cambió nada** (C3 sigue en ~−1.6 bajo adversarial training). Esto **descarta la hipótesis del surrogate poco entrenado**: el límite NO es la calidad del surrogate, es más fundamental. Con ρ (defensor) = ε (protección) = 8/255, el adversarial training neutraliza el atajo error-minimizing independientemente de cuán bien se craftee.
+
+**Limitaciones que quedan:** misma configuración (CIFAR, SmallCNN, ε=8, ρ=8, adv-steps=4); mi robust unlearnable aún no es el método completo de Fu et al. (expansión min-min-max exacta); falta barrer **ρ < ε** (dar a la protección más presupuesto que al defensor), ε_adv, y probar en rostros (Olivetti). Pero dos implementaciones (simplificada y con surrogate bien entrenado) fallan igual → el negativo es sólido en este montaje.
+
+**Lectura para el producto:** C1 (anti-entrenamiento, ya documentado) sigue siendo la protección válida frente a un entrenador **estándar**; frente a un adversario que use adversarial training (a un coste de ~13 pts de accuracy limpia para él), ninguna variante protege en este montaje. Se mantiene el alcance honesto: dificulta entrenar, no lo impide contra un atacante decidido.
+
+### Hallazgo — presupuesto asimétrico ε > ρ (2026-10-20, 2 semillas)
+
+Última palanca: dar a la protección **más presupuesto que al defensor** (ε=12/255 vs ρ=8/255; resto igual).
+
+| Efecto neto ADVERSARIAL | semilla 0 | semilla 1 | media |
+|---|---|---|---|
+| C1 (ε=12) | +17.9 pts | +5.4 pts | ~11 (alta varianza) |
+| C3 (ε=12) | +8.4 pts | +7.7 pts | ~8 (consistente) |
+
+(Sin defensa ambos protegen fuerte: neto estándar C1 +42–44, C3 +46–48. acc LIMPIO adversarial ~61-62%.)
+
+**Resultado: residuo pequeño e inconsistente.** A diferencia de ε=ρ=8 (colapso a ~0), con **ε > ρ queda un efecto neto pequeño** bajo adversarial training, pero **modesto (~5-10 pts) y ruidoso**: la semilla 0 dio C1 +17.9 (parecía mucho) y la semilla 1 solo +5.4. El entusiasmo de la primera semilla NO se confirmó. C3 es más consistente (~8) pero igual de pequeño, y **la variante "robust" no mejora al C1 simple**.
+
+**Caveat (carrera armamentista):** incluso este residuo pequeño solo aparece si el atacante usa ρ **menor** que ε. El atacante controla ρ y puede subirlo (a cambio de más coste de accuracy limpia). Pendiente opcional: ρ=12 (atacante iguala) para confirmar el colapso. Además ε=12 es **visible** (grano fino al hacer zoom).
+
+**Conclusión de la línea C3:** (1) a igualdad de presupuesto, el adversarial training **vence** a la protección anti-entrenamiento (negativo sólido: 2 semillas + surrogate bien entrenado, todos colapsan a ~0). (2) Gastar más presupuesto que el atacante (ruido más visible) compra solo un **residuo pequeño e inconsistente**, y ahí el ruido sofisticado "robust" no aporta sobre el simple. **Veredicto honesto: la protección anti-entrenamiento no resiste a un atacante que use adversarial training.** Sigue siendo válida solo frente a entrenamiento estándar.

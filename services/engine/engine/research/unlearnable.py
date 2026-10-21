@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import io
 import os
-import tempfile
 import time
 
 import numpy as np
@@ -50,26 +49,38 @@ class SmallCNN(nn.Module):
 
 
 def load_subset(n_classes: int, per_class_train: int, per_class_test: int):
-    import torchvision
+    # Dónde está CIFAR. Configurable; por defecto, la caché del usuario
+    # (~/.cache, persistente entre reinicios; /tmp se borra al reiniciar).
+    root = os.environ.get("IPT_DATA_DIR", os.path.expanduser("~/.cache/ipt-cifar"))
 
-    # Dónde descargar/cachear CIFAR. Configurable; por defecto, una carpeta local
-    # temporal (no se versiona, ver .gitignore).
-    root = os.environ.get("IPT_DATA_DIR", os.path.join(tempfile.gettempdir(), "ipt-cifar"))
-    tr = torchvision.datasets.CIFAR10(root, train=True, download=True)
-    te = torchvision.datasets.CIFAR10(root, train=False, download=True)
+    # Ruta rápida: caché .npz (p. ej. construida desde el mirror de Hugging Face,
+    # mucho más rápido que el servidor original). Si no existe, usa torchvision.
+    npz = os.path.join(root, "cifar_hf.npz")
+    if os.path.exists(npz):
+        d = np.load(npz)
+        tr_data, tr_targets = d["xtr"], d["ytr"]
+        te_data, te_targets = d["xte"], d["yte"]
+    else:
+        import torchvision
 
-    def take(ds, per):
+        tr = torchvision.datasets.CIFAR10(root, train=True, download=True)
+        te = torchvision.datasets.CIFAR10(root, train=False, download=True)
+        tr_data, tr_targets = tr.data, np.asarray(tr.targets)
+        te_data, te_targets = te.data, np.asarray(te.targets)
+
+    def take(data, targets, per):
         xs, ys = [], []
         counts = {c: 0 for c in range(n_classes)}
-        for img, y in zip(ds.data, ds.targets):
+        for img, y in zip(data, targets):
+            y = int(y)
             if y < n_classes and counts[y] < per:
                 xs.append(img)
                 ys.append(y)
                 counts[y] += 1
         return np.stack(xs).astype(np.float32) / 255.0, np.array(ys)
 
-    xtr, ytr = take(tr, per_class_train)
-    xte, yte = take(te, per_class_test)
+    xtr, ytr = take(tr_data, tr_targets, per_class_train)
+    xte, yte = take(te_data, te_targets, per_class_test)
     # (N,H,W,C) -> (N,C,H,W)
     to_t = lambda a: torch.from_numpy(a).permute(0, 3, 1, 2).contiguous()
     return to_t(xtr), torch.from_numpy(ytr), to_t(xte), torch.from_numpy(yte)

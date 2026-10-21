@@ -65,12 +65,13 @@ Para que un resultado cuente, un experimento debe tener:
 - **Qué sabemos:** el ruido *error-minimizing* por clase hace caer el entrenamiento de un reconocedor de identidad ~35 puntos de efecto neto (vs control aleatorio), sobre rostros reales (Olivetti) y transfer learning de un ResNet18 preentrenado no visto; **sobrevive a JPEG 85** (✅). El límite duro: **no existe configuración imperceptible Y efectiva** —el efecto necesita ε≥6 (sutil pero visible de cerca).
 - **Esto es lo más sólido del eje "entrenamiento"** y la base de las dos preguntas siguientes.
 
-### C3 · Robust unlearnable (contra adversarial training) ⬜ (siguiente paso recomendado)
+### C3 · Robust unlearnable (contra adversarial training) ⚠️ (negativo preliminar, 2026-10-20)
 
-- **Qué sabemos:** C1 tiene una debilidad conocida en la literatura: si quien entrena usa **adversarial training**, puede recuperar parte de la utilidad de las fotos. Existe la variante "robust unlearnable" diseñada contra esa defensa.
-- **Falta:** implementar el ruido robusto y repetir el experimento de C1 añadiendo adversarial training al entrenador.
-- **Coste:** CPU-medio. Punto de partida: `engine/research/unlearnable.py`, `unlearnable_faces.py`, `unlearnable_quality.py`.
-- **Éxito:** el efecto neto se mantiene (≥20 pts) **aunque** el entrenador use adversarial training. **Fracaso:** el adversarial training lo elimina → se documenta como límite real de la protección anti-entrenamiento.
+- **Qué sabemos:** C1 tiene una debilidad conocida: si quien entrena usa **adversarial training**, recupera la utilidad de las fotos. Se implementó "robust unlearnable" (Fu et al., ICLR 2022) en `engine/research/unlearnable_robust.py` y se probó en CIFAR, 5 clases. **Resultado negativo robusto** (2 semillas + versión con surrogate bien entrenado): sin defensa C1 (+39–45 pts) y C3 (+23–35 pts) protegen; con adversarial training **ambos colapsan a ~0**. Entrenar el surrogate 4× más **no ayudó** → descarta la hipótesis del surrogate poco entrenado; el límite es más fundamental (con ρ_defensor = ε_protección, el adversarial training neutraliza el atajo). Matiz: la defensa cuesta al atacante ~13 pts de accuracy limpia. Detalle en [MATRIZ_INVESTIGACION.md](MATRIZ_INVESTIGACION.md).
+- **Probado — presupuesto asimétrico ε>ρ (2026-10-20, 2 semillas):** con ε=12/255 vs ρ=8/255 queda solo un **residuo pequeño e inconsistente** bajo adversarial training (C1 neto +17.9 en s0 pero +5.4 en s1; C3 ~+8 estable). El salto grande de la 1ª semilla **no se confirmó**. La variante "robust" C3 no mejora al C1 simple. Detalle en [MATRIZ_INVESTIGACION.md](MATRIZ_INVESTIGACION.md).
+- **Falta (opcional, para cerrar el cuadro):** ρ=12 (atacante iguala presupuesto → confirmar colapso); el montaje de rostros (Olivetti); la expansión min-min-max exacta de Fu et al.
+- **Coste:** CPU-medio (~50 min a 3 hilos por corrida).
+- **Estado (conclusión):** a igualdad de presupuesto el adversarial training **vence** la protección anti-entrenamiento (negativo sólido); con más presupuesto que el atacante queda un residuo pequeño y ruidoso. **No es una garantía; vale solo frente a entrenamiento estándar.**
 
 ### C-escala · Escalar unlearnable a datos de rostro mayores y fine-tuning completo ⬜
 
