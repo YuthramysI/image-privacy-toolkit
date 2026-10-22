@@ -290,6 +290,37 @@ Se probó la hipótesis de que el negativo se debía a un surrogate poco entrena
 
 **Resultado: residuo pequeño e inconsistente.** A diferencia de ε=ρ=8 (colapso a ~0), con **ε > ρ queda un efecto neto pequeño** bajo adversarial training, pero **modesto (~5-10 pts) y ruidoso**: la semilla 0 dio C1 +17.9 (parecía mucho) y la semilla 1 solo +5.4. El entusiasmo de la primera semilla NO se confirmó. C3 es más consistente (~8) pero igual de pequeño, y **la variante "robust" no mejora al C1 simple**.
 
-**Caveat (carrera armamentista):** incluso este residuo pequeño solo aparece si el atacante usa ρ **menor** que ε. El atacante controla ρ y puede subirlo (a cambio de más coste de accuracy limpia). Pendiente opcional: ρ=12 (atacante iguala) para confirmar el colapso. Además ε=12 es **visible** (grano fino al hacer zoom).
+**Caveat (carrera armamentista) — CONFIRMADO:** el residuo solo aparece si el atacante usa ρ **menor** que ε. Se probó ρ=12 (atacante iguala a ε=12): el efecto **vuelve a colapsar** (C1 neto −6.5, C3 −3.0). El atacante controla ρ y, al igualarlo, neutraliza la protección — aunque le cuesta más accuracy limpia (a ρ=12, LIMPIO cae a 54.9% vs 62.5% con ρ=8; ~20 pts de coste). Es una **carrera de presupuesto-vs-presupuesto que el defensor gana**. Además ε=12 ya es **visible** (grano fino al hacer zoom).
+
+Cuadro completo del efecto neto bajo adversarial training:
+
+| | ρ=8 | ρ=12 |
+|---|---|---|
+| ε=8 | ~0 (colapso) | — |
+| ε=12 | +5 a +18 (residuo, ruidoso) | ~−5 (colapso) |
+
+## C-faces — la defensa depende de cuánto reentrena el atacante (2026-10-21, 2 semillas)
+
+Pregunta: en CIFAR el adversarial training vence la protección, pero ese atacante entrena una red **completa desde cero**. En el caso **realista** nadie hace eso: se reutiliza un modelo preentrenado (transfer learning). ¿Aguanta ahí? Montaje: Olivetti (rostros reales), 20 identidades, ResNet18 preentrenado **congelado** + linear probe; el atacante reentrena el probe de forma estándar vs **adversarial** (ataque PGD en píxeles a través del ResNet). Script: `engine/research/unlearnable_faces_adv.py`.
+
+| Efecto neto (aleatorio − protegido) | ESTÁNDAR | ADVERSARIAL |
+|---|---|---|
+| semilla 0 | +31.7 pts | +13.3 pts |
+| semilla 1 | +40.0 pts | +8.3 pts |
+| **media** | **~36 pts** | **~11 pts** |
+
+**Resultado (2 semillas): la protección se debilita pero NO se elimina.** En rostros con transfer learning, el adversarial training reduce el efecto de ~36 a ~11 pts (se pierde ~2/3), pero queda un **residuo consistente (~8-13 pts)** — muy por encima del ~0 de CIFAR. **Interpretación:** un backbone **congelado** no puede adaptar sus features para "ver a través" del ruido protector, así que adversarial-trainear solo el probe es una defensa **mucho más débil** que el adversarial training de una red completa. Como el transfer learning es **el escenario más realista** (así entrena la industria), este residuo es relevante para el producto.
+
+**Limitaciones:** 2 semillas (el residuo es modesto y algo variable, 8-13); linear probe (no fine-tuning adversarial del backbone completo — si el atacante reentrena también el backbone, podría caer como en CIFAR); Olivetti pequeño (20 id, 64×64). **Matiz honesto:** el residuo aguanta frente a la defensa adversarial **más débil** (probe-only sobre backbone congelado), no frente a cualquier atacante.
+
+### Conclusión global de la línea anti-entrenamiento (C1/C3/faces)
+
+| Escenario de entrenamiento del atacante | ¿Protege C1? |
+|---|---|
+| Entrenamiento **estándar** (CIFAR o rostros) | ✅ Sí, fuerte (~36-45 pts) |
+| **Adversarial training, red completa desde cero** (CIFAR) | ❌ No (~0, a igualdad de presupuesto; 2 semillas + surrogate fiel) |
+| **Adversarial training, solo linear probe sobre backbone congelado** (rostros, transfer learning realista) | ⚠️ Parcial (~11 pts residuo, 2 semillas) |
+
+La protección anti-entrenamiento **dificulta** entrenar con tus fotos; su eficacia frente a un atacante que la intenta limpiar con adversarial training **depende de cuánto reentrene**: cae contra un reentrenamiento completo, resiste parcialmente contra el transfer learning realista. No es garantía; es un coste añadido para el atacante.
 
 **Conclusión de la línea C3:** (1) a igualdad de presupuesto, el adversarial training **vence** a la protección anti-entrenamiento (negativo sólido: 2 semillas + surrogate bien entrenado, todos colapsan a ~0). (2) Gastar más presupuesto que el atacante (ruido más visible) compra solo un **residuo pequeño e inconsistente**, y ahí el ruido sofisticado "robust" no aporta sobre el simple. **Veredicto honesto: la protección anti-entrenamiento no resiste a un atacante que use adversarial training.** Sigue siendo válida solo frente a entrenamiento estándar.
